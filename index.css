@@ -1,0 +1,464 @@
+import React, { useState, useRef } from "react";
+import { motion, AnimatePresence } from "motion/react";
+import { 
+  Upload, 
+  FileText, 
+  Image as ImageIcon, 
+  File as FileIcon, 
+  Check, 
+  ArrowRight, 
+  Loader2, 
+  Layout, 
+  Sparkles,
+  ChevronLeft,
+  Monitor,
+  Smartphone,
+  ExternalLink,
+  Download
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { generateSiteVersions, SiteContent } from "@/src/lib/gemini";
+import * as LucideIcons from "lucide-react";
+
+type Step = "upload" | "analyzing" | "selecting" | "preview";
+type DesignStyle = "minimal" | "brutalist" | "elegant";
+
+export default function App() {
+  const [step, setStep] = useState<Step>("upload");
+  const [file, setFile] = useState<File | null>(null);
+  const [extractedData, setExtractedData] = useState<any>(null);
+  const [versions, setVersions] = useState<SiteContent[]>([]);
+  const [selectedVersion, setSelectedVersion] = useState<number>(0);
+  const [selectedStyle, setSelectedStyle] = useState<DesignStyle>("minimal");
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const uploadedFile = e.target.files?.[0];
+    if (!uploadedFile) return;
+
+    setFile(uploadedFile);
+    setIsUploading(true);
+    setStep("analyzing");
+
+    const formData = new FormData();
+    formData.append("file", uploadedFile);
+
+    try {
+      const response = await fetch("/api/extract", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await response.json();
+      setExtractedData(data);
+
+      // Generate versions
+      const generatedVersions = await generateSiteVersions(data);
+      setVersions(generatedVersions);
+      setStep("selecting");
+    } catch (error) {
+      console.error("Error processing file:", error);
+      setStep("upload");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const renderStep = () => {
+    switch (step) {
+      case "upload":
+        return <UploadStep onUpload={() => fileInputRef.current?.click()} inputRef={fileInputRef} onChange={handleFileUpload} />;
+      case "analyzing":
+        return <AnalyzingStep file={file} />;
+      case "selecting":
+        return <SelectingStep versions={versions} onSelect={(idx) => { setSelectedVersion(idx); setStep("preview"); }} />;
+      case "preview":
+        return (
+          <PreviewStep 
+            content={versions[selectedVersion]} 
+            style={selectedStyle} 
+            onStyleChange={setSelectedStyle}
+            onBack={() => setStep("selecting")}
+          />
+        );
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-neutral-50 text-neutral-900 font-sans selection:bg-neutral-200">
+      <header className="border-b bg-white/80 backdrop-blur-md sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => setStep("upload")}>
+            <div className="w-8 h-8 bg-neutral-900 rounded-lg flex items-center justify-center text-white">
+              <Sparkles size={18} />
+            </div>
+            <span className="font-bold text-xl tracking-tight">SiteGenie</span>
+          </div>
+          <div className="flex items-center gap-4">
+            {step === "preview" && (
+              <Button variant="outline" size="sm" className="gap-2">
+                <Download size={16} />
+                Export
+              </Button>
+            )}
+            <Button size="sm" className="bg-neutral-900 text-white hover:bg-neutral-800">
+              Sign In
+            </Button>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 py-12">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={step}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.3 }}
+          >
+            {renderStep()}
+          </motion.div>
+        </AnimatePresence>
+      </main>
+    </div>
+  );
+}
+
+function UploadStep({ onUpload, inputRef, onChange }: any) {
+  return (
+    <div className="max-w-2xl mx-auto text-center space-y-8 py-12">
+      <div className="space-y-4">
+        <h1 className="text-5xl font-bold tracking-tight text-neutral-900">
+          Turn any document into a <span className="text-neutral-500">website.</span>
+        </h1>
+        <p className="text-xl text-neutral-600 max-w-lg mx-auto">
+          Upload a PDF, Word doc, image, or text file. Our AI will analyze the content and build a professional site for you in seconds.
+        </p>
+      </div>
+
+      <div 
+        onClick={onUpload}
+        className="border-2 border-dashed border-neutral-200 rounded-3xl p-12 bg-white hover:border-neutral-400 hover:bg-neutral-50 transition-all cursor-pointer group"
+      >
+        <input type="file" ref={inputRef} onChange={onChange} className="hidden" accept=".pdf,.docx,.txt,image/*" />
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-16 h-16 bg-neutral-100 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+            <Upload className="text-neutral-600" size={32} />
+          </div>
+          <div className="space-y-1">
+            <p className="font-medium text-lg">Click to upload or drag and drop</p>
+            <p className="text-neutral-500">PDF, DOCX, TXT, or Images (Max 10MB)</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-center gap-8 pt-8 opacity-50 grayscale">
+        <div className="flex items-center gap-2"><FileText size={20} /> PDF</div>
+        <div className="flex items-center gap-2"><FileIcon size={20} /> Word</div>
+        <div className="flex items-center gap-2"><ImageIcon size={20} /> Images</div>
+      </div>
+    </div>
+  );
+}
+
+function AnalyzingStep({ file }: { file: File | null }) {
+  return (
+    <div className="max-w-md mx-auto text-center space-y-8 py-24">
+      <div className="relative w-24 h-24 mx-auto">
+        <div className="absolute inset-0 border-4 border-neutral-100 rounded-full"></div>
+        <motion.div 
+          className="absolute inset-0 border-4 border-neutral-900 rounded-full border-t-transparent"
+          animate={{ rotate: 360 }}
+          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+        />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Sparkles className="text-neutral-900" size={32} />
+        </div>
+      </div>
+      <div className="space-y-2">
+        <h2 className="text-2xl font-bold">Analyzing your content...</h2>
+        <p className="text-neutral-500">
+          Extracting data from <span className="font-medium text-neutral-900">{file?.name}</span> and designing your site versions.
+        </p>
+      </div>
+      <div className="flex flex-col gap-2 max-w-xs mx-auto">
+        <div className="h-2 bg-neutral-100 rounded-full overflow-hidden">
+          <motion.div 
+            className="h-full bg-neutral-900"
+            initial={{ width: "0%" }}
+            animate={{ width: "100%" }}
+            transition={{ duration: 10 }}
+          />
+        </div>
+        <div className="flex justify-between text-xs text-neutral-400 font-mono">
+          <span>PARSING_FILE</span>
+          <span>GENERATING_UI</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SelectingStep({ versions, onSelect }: { versions: SiteContent[], onSelect: (idx: number) => void }) {
+  return (
+    <div className="space-y-12">
+      <div className="text-center space-y-4">
+        <Badge variant="outline" className="px-3 py-1 rounded-full border-neutral-200">Step 2: Selection</Badge>
+        <h2 className="text-4xl font-bold tracking-tight">Choose your site's direction</h2>
+        <p className="text-neutral-500 text-lg">We've generated 3 distinct versions based on your content. Select the one that fits best.</p>
+      </div>
+
+      <div className="grid md:grid-cols-3 gap-8">
+        {versions.map((v, i) => (
+          <motion.div
+            key={i}
+            whileHover={{ y: -8 }}
+            className="group"
+          >
+            <Card className="h-full border-neutral-200 overflow-hidden hover:shadow-2xl hover:shadow-neutral-200/50 transition-all cursor-pointer" onClick={() => onSelect(i)}>
+              <div className="aspect-video bg-neutral-100 relative overflow-hidden">
+                <div className="absolute inset-0 p-4 flex flex-col gap-2">
+                  <div className="h-4 w-1/3 bg-neutral-200 rounded"></div>
+                  <div className="h-8 w-2/3 bg-neutral-300 rounded"></div>
+                  <div className="mt-auto flex gap-2">
+                    <div className="h-12 w-12 bg-neutral-200 rounded-full"></div>
+                    <div className="h-12 w-12 bg-neutral-200 rounded-full"></div>
+                  </div>
+                </div>
+                <div className="absolute inset-0 bg-neutral-900/0 group-hover:bg-neutral-900/5 transition-colors" />
+              </div>
+              <CardHeader>
+                <div className="flex justify-between items-start">
+                  <CardTitle className="text-xl">{v.title}</CardTitle>
+                  <Badge className="bg-neutral-100 text-neutral-600 hover:bg-neutral-100 border-none">v{i + 1}</Badge>
+                </div>
+                <CardDescription className="line-clamp-2">{v.hero.subtitle}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <p className="text-xs font-bold uppercase tracking-wider text-neutral-400">Key Sections</p>
+                  <div className="flex flex-wrap gap-2">
+                    {v.sections.map((s, si) => (
+                      <Badge key={si} variant="secondary" className="bg-neutral-50 text-[10px] uppercase">{s.type}</Badge>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+              <CardFooter>
+                <Button className="w-full bg-neutral-900 text-white group-hover:bg-neutral-800">
+                  Select Design <ArrowRight size={16} className="ml-2" />
+                </Button>
+              </CardFooter>
+            </Card>
+          </motion.div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PreviewStep({ content, style, onStyleChange, onBack }: { content: SiteContent, style: DesignStyle, onStyleChange: (s: DesignStyle) => void, onBack: () => void }) {
+  const [view, setView] = useState<"desktop" | "mobile">("desktop");
+
+  return (
+    <div className="space-y-8">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={onBack} className="rounded-full">
+            <ChevronLeft size={20} />
+          </Button>
+          <div>
+            <h2 className="text-2xl font-bold">{content.title}</h2>
+            <p className="text-neutral-500 text-sm">Previewing your generated site</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 bg-white p-1 rounded-xl border border-neutral-200">
+          <Button 
+            variant={style === "minimal" ? "secondary" : "ghost"} 
+            size="sm" 
+            onClick={() => onStyleChange("minimal")}
+            className="rounded-lg"
+          >
+            Minimal
+          </Button>
+          <Button 
+            variant={style === "brutalist" ? "secondary" : "ghost"} 
+            size="sm" 
+            onClick={() => onStyleChange("brutalist")}
+            className="rounded-lg"
+          >
+            Brutalist
+          </Button>
+          <Button 
+            variant={style === "elegant" ? "secondary" : "ghost"} 
+            size="sm" 
+            onClick={() => onStyleChange("elegant")}
+            className="rounded-lg"
+          >
+            Elegant
+          </Button>
+        </div>
+
+        <div className="flex items-center gap-2 bg-white p-1 rounded-xl border border-neutral-200">
+          <Button 
+            variant={view === "desktop" ? "secondary" : "ghost"} 
+            size="icon" 
+            onClick={() => setView("desktop")}
+            className="rounded-lg"
+          >
+            <Monitor size={18} />
+          </Button>
+          <Button 
+            variant={view === "mobile" ? "secondary" : "ghost"} 
+            size="icon" 
+            onClick={() => setView("mobile")}
+            className="rounded-lg"
+          >
+            <Smartphone size={18} />
+          </Button>
+        </div>
+      </div>
+
+      <div className={`mx-auto transition-all duration-500 bg-white border border-neutral-200 shadow-2xl rounded-2xl overflow-hidden ${view === "desktop" ? "w-full" : "max-w-[375px]"}`}>
+        <div className="h-8 bg-neutral-50 border-b border-neutral-200 flex items-center px-4 gap-1.5">
+          <div className="w-2.5 h-2.5 rounded-full bg-neutral-200" />
+          <div className="w-2.5 h-2.5 rounded-full bg-neutral-200" />
+          <div className="w-2.5 h-2.5 rounded-full bg-neutral-200" />
+        </div>
+        <ScrollArea className="h-[70vh]">
+          <SiteRenderer content={content} style={style} />
+        </ScrollArea>
+      </div>
+    </div>
+  );
+}
+
+function SiteRenderer({ content, style }: { content: SiteContent, style: DesignStyle }) {
+  const styles = {
+    minimal: {
+      wrapper: "font-sans bg-white text-neutral-900",
+      hero: "py-24 px-8 text-center max-w-4xl mx-auto space-y-6",
+      heroTitle: "text-6xl font-bold tracking-tight",
+      heroSubtitle: "text-xl text-neutral-500",
+      section: "py-20 px-8 max-w-6xl mx-auto",
+      sectionTitle: "text-3xl font-bold mb-12 text-center",
+      card: "bg-neutral-50 p-8 rounded-2xl border border-neutral-100",
+      button: "bg-neutral-900 text-white px-8 py-3 rounded-full font-medium hover:bg-neutral-800 transition-colors",
+      footer: "py-12 px-8 border-t border-neutral-100 text-center text-neutral-400 text-sm"
+    },
+    brutalist: {
+      wrapper: "font-display bg-white text-black",
+      hero: "py-24 px-8 border-b-4 border-black",
+      heroTitle: "text-8xl uppercase leading-[0.9] mb-8",
+      heroSubtitle: "text-2xl font-sans font-bold mb-8 max-w-2xl",
+      section: "py-24 px-8 border-b-4 border-black last:border-b-0",
+      sectionTitle: "text-5xl uppercase mb-16",
+      card: "border-4 border-black p-8 hover:bg-neutral-900 hover:text-white transition-colors",
+      button: "bg-black text-white px-10 py-5 text-xl uppercase font-bold hover:translate-x-2 hover:-translate-y-2 transition-transform shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]",
+      footer: "py-12 px-8 bg-black text-white font-mono text-xs uppercase tracking-widest"
+    },
+    elegant: {
+      wrapper: "font-serif bg-[#FDFCF9] text-[#2D2926]",
+      hero: "py-32 px-8 text-center max-w-3xl mx-auto space-y-8",
+      heroTitle: "text-7xl italic font-light leading-tight",
+      heroSubtitle: "font-sans text-lg uppercase tracking-[0.2em] text-neutral-500",
+      section: "py-24 px-8 max-w-5xl mx-auto",
+      sectionTitle: "text-4xl italic mb-16 text-center border-b border-neutral-200 pb-8",
+      card: "p-8 border-l border-neutral-200 space-y-4",
+      button: "font-sans uppercase tracking-widest border border-[#2D2926] px-12 py-4 hover:bg-[#2D2926] hover:text-white transition-all",
+      footer: "py-16 px-8 bg-[#2D2926] text-[#FDFCF9] text-center font-sans text-xs uppercase tracking-[0.3em]"
+    }
+  };
+
+  const s = styles[style];
+
+  return (
+    <div className={s.wrapper}>
+      {/* Hero */}
+      <section className={s.hero}>
+        <motion.h1 
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          className={s.heroTitle}
+        >
+          {content.hero.title}
+        </motion.h1>
+        <motion.p 
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className={s.heroSubtitle}
+        >
+          {content.hero.subtitle}
+        </motion.p>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+        >
+          <button className={s.button}>{content.hero.cta}</button>
+        </motion.div>
+      </section>
+
+      {/* Sections */}
+      {content.sections.map((section, idx) => (
+        <section key={idx} className={s.section}>
+          {section.title && <h2 className={s.sectionTitle}>{section.title}</h2>}
+          
+          {section.type === "features" && section.items && (
+            <div className="grid md:grid-cols-3 gap-8">
+              {section.items.map((item, i) => {
+                const Icon = (LucideIcons as any)[item.icon || "Circle"] || LucideIcons.Circle;
+                return (
+                  <div key={i} className={s.card}>
+                    <Icon size={32} className="mb-4 opacity-50" />
+                    <h3 className="text-xl font-bold mb-2">{item.title}</h3>
+                    <p className="opacity-70">{item.description}</p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {section.type === "content" && (
+            <div className="max-w-3xl mx-auto prose prose-neutral">
+              <p className="text-lg leading-relaxed opacity-80">{section.body}</p>
+            </div>
+          )}
+
+          {section.type === "gallery" && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="aspect-square bg-neutral-100 rounded-lg overflow-hidden">
+                  <img 
+                    src={`https://picsum.photos/seed/${i + idx}/800/800`} 
+                    alt="Gallery" 
+                    className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-500"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      ))}
+
+      {/* Footer */}
+      <footer className={s.footer}>
+        <p>{content.footer.text}</p>
+        <div className="mt-4 flex justify-center gap-4 opacity-50">
+          <LucideIcons.Twitter size={16} />
+          <LucideIcons.Instagram size={16} />
+          <LucideIcons.Linkedin size={16} />
+        </div>
+      </footer>
+    </div>
+  );
+}

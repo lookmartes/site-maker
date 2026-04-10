@@ -1,0 +1,105 @@
+import express from "express";
+import { createServer as createViteServer } from "vite";
+import path from "path";
+import multer from "multer";
+import mammoth from "mammoth";
+// @ts-ignore
+import pdf from "pdf-parse/lib/pdf-parse.js";
+import fs from "fs";
+
+const upload = multer({ dest: "uploads/" });
+
+async function startServer() {
+  const app = express();
+  const PORT = 3000;
+
+  console.log("Starting server...");
+  console.log("NODE_ENV:", process.env.NODE_ENV);
+
+  app.use(express.json());
+
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok", mode: process.env.NODE_ENV || "development" });
+  });
+
+  // API Route for file extraction
+  app.post("/api/extract", upload.single("file"), async (req: any, res: any) => {
+    console.log("Received extraction request for:", req.file?.originalname);
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      const filePath = req.file.path;
+      const mimeType = req.file.mimetype;
+      const originalName = req.file.originalname;
+      let extractedText = "";
+
+      if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+        const result = await mammoth.extractRawText({ path: filePath });
+        extractedText = result.value;
+      } else if (mimeType === "application/pdf") {
+        const dataBuffer = fs.readFileSync(filePath);
+        const data = await pdf(dataBuffer);
+        extractedText = data.text;
+      } else if (mimeType.startsWith("text/")) {
+        extractedText = fs.readFileSync(filePath, "utf-8");
+      } else if (mimeType.startsWith("image/")) {
+        // For images, we'll send the base64 to the frontend and let Gemini handle it
+        const base64 = fs.readFileSync(filePath, "base64");
+        fs.unlinkSync(filePath);
+        return res.json({ 
+          type: "image", 
+          mimeType, 
+          data: base64,
+          fileName: originalName
+        });
+      } else {
+        fs.unlinkSync(filePath);
+        return res.status(400).json({ error: "Unsupported file type" });
+      }
+
+      fs.unlinkSync(filePath);
+      res.json({ 
+        type: "text", 
+        content: extractedText,
+        fileName: originalName
+      });
+    } catch (error) {
+      console.error("Extraction error:", error);
+      res.status(500).json({ error: "Failed to extract content" });
+    }
+  });
+
+  const isProd = process.env.NODE_ENV === "production";
+  
+  if (!isProd) {
+    console.log("Running in development mode with Vite middleware");
+    try {
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+    } catch (e) {
+      console.error("Failed to create Vite server:", e);
+    }
+  } else {
+    console.log("Running in production mode");
+    const distPath = path.join(process.cwd(), "dist");
+    if (fs.existsSync(distPath)) {
+      app.use(express.static(distPath));
+      app.get("*", (req, res) => {
+        res.sendFile(path.join(distPath, "index.html"));
+      });
+    } else {
+      console.error("Dist path does not exist! Did you run npm run build?");
+    }
+  }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
+}
+
+startServer();

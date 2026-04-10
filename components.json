@@ -1,0 +1,116 @@
+import { GoogleGenAI, Type } from "@google/genai";
+
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+export interface SiteContent {
+  title: string;
+  hero: {
+    title: string;
+    subtitle: string;
+    cta: string;
+  };
+  sections: Array<{
+    type: "features" | "content" | "gallery" | "pricing" | "contact";
+    title?: string;
+    body?: string;
+    items?: Array<{
+      title: string;
+      description: string;
+      icon?: string;
+    }>;
+  }>;
+  footer: {
+    text: string;
+  };
+}
+
+export async function generateSiteVersions(extractedData: any): Promise<SiteContent[]> {
+  let contents: any[] = [];
+  
+  if (extractedData.type === "image") {
+    contents = [
+      {
+        text: "You are an expert web designer. Analyze this image and generate 3 distinct website structures based on its content, style, and any text visible. Return an array of 3 objects following the provided schema."
+      },
+      {
+        inlineData: {
+          mimeType: extractedData.mimeType,
+          data: extractedData.data
+        }
+      }
+    ];
+  } else {
+    contents = [
+      {
+        text: `
+          You are an expert web designer. Based on the following extracted text content, generate 3 distinct website structures.
+          
+          Extracted Content:
+          ${extractedData.content}
+          
+          Generate 3 versions of a website. Each version should have a slightly different focus or tone but remain relevant to the content.
+          Return an array of 3 objects following the provided schema.
+        `
+      }
+    ];
+  }
+
+  const response = await ai.models.generateContent({
+    model: "gemini-3-flash-preview",
+    contents: { parts: contents },
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            title: { type: Type.STRING },
+            hero: {
+              type: Type.OBJECT,
+              properties: {
+                title: { type: Type.STRING },
+                subtitle: { type: Type.STRING },
+                cta: { type: Type.STRING },
+              },
+              required: ["title", "subtitle", "cta"]
+            },
+            sections: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  type: { type: Type.STRING, enum: ["features", "content", "gallery", "pricing", "contact"] },
+                  title: { type: Type.STRING },
+                  body: { type: Type.STRING },
+                  items: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        title: { type: Type.STRING },
+                        description: { type: Type.STRING },
+                        icon: { type: Type.STRING, description: "Lucide icon name" }
+                      }
+                    }
+                  }
+                },
+                required: ["type"]
+              }
+            },
+            footer: {
+              type: Type.OBJECT,
+              properties: {
+                text: { type: Type.STRING }
+              },
+              required: ["text"]
+            }
+          },
+          required: ["title", "hero", "sections", "footer"]
+        }
+      }
+    }
+  });
+
+  return JSON.parse(response.text);
+}
